@@ -1,3 +1,13 @@
+---
+title: Eye Disease Classifier
+emoji: 👁️
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Eye Disease Classification (Retinal Fundus Images)
 
 A Flask + TensorFlow app that trains a CNN on the `Fundus_diseases/`

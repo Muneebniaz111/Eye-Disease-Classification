@@ -1,0 +1,6 @@
+Fundus_diseases/
+.git/
+__pycache__/
+*.pyc
+.venv/
+venv/
