@@ -2,13 +2,16 @@ from flask import Flask, render_template, request, jsonify, send_file
 from io import BytesIO
 from PIL import Image
 import numpy as np
-import tensorflow as tf
-from keras.preprocessing.image import img_to_array
 import os
 import json
 import logging
 import datetime
 import uuid
+
+try:
+    from tflite_runtime.interpreter import Interpreter
+except ImportError:
+    from tensorflow.lite.python.interpreter import Interpreter
 
 # --- PDF report generation (reportlab) -------------------------------
 # Only used by the new /generate_report route below. Nothing about the
@@ -41,10 +44,10 @@ model = None
 class_names = None
 
 def load_model():
-    """Load the trained model and its class-name mapping, with error handling"""
+    """Load the trained TFLite model and its class-name mapping, with error handling."""
     global model, class_names
     try:
-        model_path = os.path.join(BASE_DIR, 'models', 'best_cnn_model.keras')
+        model_path = os.path.join(BASE_DIR, 'best_cnn_model.tflite')
         class_names_path = os.path.join(BASE_DIR, 'models', 'class_names.json')
 
         if not os.path.exists(model_path):
@@ -58,25 +61,44 @@ def load_model():
                 f"Class names file not found at {class_names_path}. Run train_model.py first."
             )
 
-        model = tf.keras.models.load_model(model_path)
+        interpreter = Interpreter(model_path=model_path)
+        interpreter.allocate_tensors()
 
         with open(class_names_path, 'r') as f:
             class_names = json.load(f)
 
-        # Sanity check: the model's output layer must have exactly one unit
-        # per class name, or predictions would silently be decoded wrong.
-        output_units = model.output_shape[-1]
-        if output_units != len(class_names):
+        output_details = interpreter.get_output_details()
+        if output_details:
+            output_shape = output_details[0]['shape']
+            output_units = output_shape[-1] if len(output_shape) > 0 else None
+        else:
+            output_units = None
+
+        if output_units is not None and output_units != len(class_names):
             raise ValueError(
                 f"Model output has {output_units} units but class_names.json has "
                 f"{len(class_names)} entries ({class_names}). The model and the "
                 "class-name mapping are out of sync -- retrain with train_model.py."
             )
 
+        model = {
+            'interpreter': interpreter,
+            'input_details': interpreter.get_input_details(),
+            'output_details': output_details,
+        }
+
         logger.info(f"Model loaded successfully. Classes: {class_names}")
     except Exception as e:
         logger.error(f"Error loading model: {str(e)}")
         raise e
+
+
+def get_model_bundle():
+    """Load the model lazily on first use so Vercel cold starts stay lightweight."""
+    global model, class_names
+    if model is None:
+        load_model()
+    return model, class_names
 
 def preprocess_image(image_file):
     """Preprocess the uploaded image for model prediction"""
@@ -98,7 +120,7 @@ def preprocess_image(image_file):
         img = original_img.resize((112, 112))
 
         # Convert to array and normalize
-        img_array = img_to_array(img) / 255.0
+        img_array = np.array(img, dtype=np.float32) / 255.0
 
         # Add batch dimension
         img_array = np.expand_dims(img_array, axis=0)
@@ -460,7 +482,8 @@ def predict():
     """Handle image prediction requests"""
     try:
         # Check if model is loaded
-        if model is None:
+        model_bundle, class_names_for_prediction = get_model_bundle()
+        if model_bundle is None:
             return jsonify({
                 'success': False,
                 'error': 'Model not loaded. Please contact administrator.'
@@ -505,14 +528,14 @@ def predict():
             predicted_class_index = np.argmax(prediction, axis=1)[0]
             confidence = float(np.max(prediction))
 
-            # class_names is loaded from models/class_names.json at startup,
-            # so it always matches exactly what the model was trained on
-            # (see load_model()) -- no more hardcoded, drifted label lists.
-            predicted_class = class_names[predicted_class_index]
+            # class_names is loaded from models/class_names.json when the
+            # model is first needed, so it always matches exactly what the
+            # model was trained on -- no more hardcoded, drifted label lists.
+            predicted_class = class_names_for_prediction[predicted_class_index]
 
             # Get all class probabilities for detailed results
             class_probabilities = {}
-            for i, class_name in enumerate(class_names):
+            for i, class_name in enumerate(class_names_for_prediction):
                 class_probabilities[class_name] = float(prediction[0][i])
             
             logger.info(f"Prediction successful: {predicted_class} (confidence: {confidence:.2f})")
@@ -579,15 +602,13 @@ def internal_error(e):
 def create_app():
     """Application factory"""
     try:
-        # Load the model
-        load_model()
         logger.info("Flask application initialized successfully")
         return app
     except Exception as e:
         logger.error(f"Failed to initialize application: {str(e)}")
         raise e
 
-# Load the model on import so the app can be hosted by WSGI/serverless platforms.
+# Create the app without eagerly loading the model so serverless cold starts stay lightweight.
 app = create_app()
 
 if __name__ == "__main__":
