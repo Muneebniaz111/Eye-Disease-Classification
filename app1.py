@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, jsonify, send_file
 from io import BytesIO
 from PIL import Image
+import importlib
 import numpy as np
 import os
 import json
@@ -9,9 +10,9 @@ import datetime
 import uuid
 
 try:
-    from tflite_runtime.interpreter import Interpreter
+    Interpreter = importlib.import_module('tflite_runtime.interpreter').Interpreter
 except ImportError:
-    from tensorflow.lite.python.interpreter import Interpreter
+    Interpreter = importlib.import_module('tensorflow.lite.python.interpreter').Interpreter
 
 # --- PDF report generation (reportlab) -------------------------------
 # Only used by the new /generate_report route below. Nothing about the
