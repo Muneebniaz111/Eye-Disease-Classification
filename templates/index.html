@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RetinaScan AI &mdash; Retinal Fundus Screening</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500;9..144,600;9..144,700;9..144,800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+
+  :root{
+    /* --- Color tokens ---
+       Inspired by the "Smartcare Brush" reference: near-black stage lit by
+       a single soft teal glow, thin editorial serif for emphasis, quiet
+       tracked sans for structure. Everything else stays out of the way. */
+    --bg-a: #050807;
+    --bg-b: #0a1210;
+    --glow-teal: #2fd9c2;
+    --glow-teal-soft: rgba(47, 217, 194, 0.16);
+
+    --ink: #eef4f1;          /* near-white, primary text */
+    --ink-soft: #9db0ab;     /* muted sage-gray */
+    --ink-faint: #58685f;
+
+    --accent: #2fd9c2;       /* teal — brand accent */
+    --accent-deep: #12a68f;
+    --accent-ink: #041512;   /* text-on-accent */
+    --accent-wash: rgba(47, 217, 194, 0.12);
+    --secondary: #7dd3ff;    /* icy blue — secondary accent */
+    --secondary-wash: rgba(125, 211, 255, 0.10);
+
+    --danger: #ff6b7f;
+    --ok: #35d488;
+    --warn: #f5b95c;
+
+    --surface: rgba(255, 255, 255, 0.035);
+    --surface-strong: rgba(255, 255, 255, 0.06);
+    --border: rgba(255, 255, 255, 0.10);
+    --border-strong: rgba(255, 255, 255, 0.20);
+    --glass-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.65);
+
+    --radius: 22px;
+    --radius-sm: 15px;
+
+    --font-display: 'Fraunces', Georgia, serif;
+    --font-body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'Space Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  *{ box-sizing: border-box; }
+  html{ scroll-behavior: smooth; }
+
+  body{
+    margin:0;
+    min-height:100vh;
+    font-family: var(--font-body);
+    font-weight: 400;
+    color: var(--ink);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    background: radial-gradient(120% 70% at 50% 30%, #0d1c19 0%, var(--bg-b) 45%, var(--bg-a) 100%);
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  a{ color: inherit; }
+  ::selection{ background: var(--accent); color: var(--accent-ink); }
+  :focus-visible{ outline: 2.5px solid var(--secondary); outline-offset: 3px; border-radius: 4px; }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+  }
+
+  /* ---------- Ambient background glow (single teal spotlight, like the reference) ---------- */
+  .blob{
+    position: fixed; border-radius: 50%; filter: blur(90px); z-index: -1;
+    pointer-events: none;
+  }
+  .blob-1{ width: 720px; height: 560px; top: 4%; left: 50%; transform: translateX(-50%);
+    background: radial-gradient(circle at 50% 40%, var(--glow-teal), transparent 68%);
+    opacity: 0.22; animation: drift1 24s ease-in-out infinite; }
+  .blob-2{ width: 520px; height: 520px; bottom: -260px; right: -160px;
+    background: radial-gradient(circle at 50% 50%, var(--secondary), transparent 70%);
+    opacity: 0.08; animation: drift2 28s ease-in-out infinite; }
+  .blob-3{ width: 420px; height: 420px; bottom: 6%; left: -180px;
+    background: radial-gradient(circle at 50% 50%, var(--glow-teal), transparent 72%);
+    opacity: 0.10; animation: drift1 30s ease-in-out infinite reverse; }
+
+  @keyframes drift1{ 0%,100%{ transform: translate(-50%,0) scale(1); } 50%{ transform: translate(calc(-50% + 20px),-16px) scale(1.05); } }
+  @keyframes drift2{ 0%,100%{ transform: translate(0,0) scale(1); } 50%{ transform: translate(-20px,20px) scale(1.04); } }
+
+  /* ---------- Glass base (dark, low-contrast panel over the glow) ---------- */
+  .glass{
+    background: linear-gradient(165deg, var(--surface-strong), var(--surface));
+    backdrop-filter: blur(24px) saturate(140%);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    border: 1px solid var(--border);
+    box-shadow: var(--glass-shadow), inset 0 1px 0 rgba(255,255,255,0.05);
+    border-radius: var(--radius);
+  }
+
+  .shell{ max-width: 1080px; margin: 0 auto; padding: 0 24px; position: relative; }
+
+  /* ---------- Nav ---------- */
+  header.nav{ position: sticky; top: 14px; z-index: 40; }
+  .nav-glass{
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 12px 22px; margin: 14px auto 0; max-width: 1032px;
+    border-radius: 999px;
+  }
+  .brand{ display:flex; align-items:center; gap:11px; }
+  .brand-mark{ width:30px; height:30px; flex-shrink:0; }
+  .brand-text{ font-family: var(--font-body); font-weight:700; font-size:14px; letter-spacing:0.02em; color: var(--ink); text-transform: uppercase; }
+  .brand-text small{
+    display:block; font-family: var(--font-mono); font-weight:400; font-size:9.5px; letter-spacing:0.09em;
+    color: var(--ink-faint); text-transform:uppercase; margin-top:2px;
+  }
+  .status-pill{
+    display:flex; align-items:center; gap:7px;
+    font-family: var(--font-mono); font-size:11px; color: var(--ink-soft);
+    background: var(--surface); border: 1px solid var(--border);
+    padding:7px 13px; border-radius: 999px;
+  }
+  .status-dot{ width:7px; height:7px; border-radius:50%; background: var(--ink-faint); transition: background .3s; }
+  .status-dot.online{ background: var(--ok); box-shadow: 0 0 0 4px rgba(53,212,136,0.18); }
+  .status-dot.offline{ background: var(--danger); box-shadow: 0 0 0 4px rgba(255,107,127,0.18); }
+
+  /* ---------- Hero ---------- */
+  .hero{ padding: 64px 0 10px; }
+  .eyebrow{
+    display:inline-flex; align-items:center; gap:8px;
+    font-family: var(--font-mono); font-size:11px; color: var(--accent);
+    background: var(--accent-wash); border:1px solid rgba(47,217,194,0.3);
+    padding:6px 13px; border-radius:999px; margin-bottom:24px;
+  }
+  h1{
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+    font-size: clamp(34px, 5vw, 54px);
+    line-height:1.08; letter-spacing:-0.01em; font-weight:400; margin:0 0 18px;
+    max-width: 660px; color: var(--ink);
+  }
+  h1 .accent-word{
+    font-style: italic; font-weight: 500;
+    background: linear-gradient(100deg, var(--accent), var(--secondary));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero-sub{ color: var(--ink-soft); font-size:16.5px; font-weight:300; max-width:560px; margin: 0 0 32px; }
+  .trust-row{ display:flex; flex-wrap:wrap; gap: 30px; margin-bottom: 48px; }
+  .trust-item{ font-size:12px; color: var(--ink-faint); font-family: var(--font-mono); letter-spacing:0.03em; }
+  .trust-item b{ display:block; font-family: var(--font-display); color: var(--ink); font-size:24px; font-weight:500; font-style: italic; }
+
+  /* ---------- Workspace ---------- */
+  .workspace{ display:grid; grid-template-columns: 1fr; gap:22px; margin-bottom: 60px; }
+  .panel{ padding: 28px; }
+  .panel-title{
+    display:flex; align-items:center; gap:10px;
+    font-family: var(--font-mono); font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.08em;
+    color: var(--ink-soft); margin: 0 0 20px;
+  }
+  .panel-title .num{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:22px; height:22px; border-radius:8px; background: var(--secondary-wash);
+    color: var(--secondary); font-family: var(--font-mono); font-size:11px; font-weight:700;
+  }
+
+  /* ---------- Dropzone ---------- */
+  .dropzone{
+    position:relative;
+    border: 1.5px dashed var(--border-strong);
+    border-radius: var(--radius-sm);
+    padding: 42px 20px; text-align:center; cursor:pointer;
+    transition: border-color .2s ease, background .2s ease, transform .2s ease;
+    background: rgba(255,255,255,0.02);
+  }
+  .dropzone:hover, .dropzone.drag{
+    border-color: var(--accent); background: var(--accent-wash); transform: scale(1.01);
+  }
+  .dropzone input[type=file]{ display:none; }
+  .dz-icon{ width:46px; height:46px; margin: 0 auto 16px; color: var(--secondary); opacity:0.7; }
+  .dropzone:hover .dz-icon, .dropzone.drag .dz-icon{ color: var(--accent); opacity:1; }
+  .dz-title{ font-family: var(--font-display); font-weight:500; font-style: italic; font-size:18px; margin-bottom:6px; color: var(--ink); }
+  .dz-sub{ font-size:12.5px; color: var(--ink-faint); }
+  .dz-sub .browse{ color: var(--accent); font-weight:600; text-decoration: underline; text-underline-offset:2px; }
+
+  .preview-wrap{ display:none; }
+  .preview-wrap.show{ display:block; }
+  .preview-frame{
+    position:relative; border-radius: var(--radius-sm); overflow:hidden;
+    border: 1px solid var(--border); background:#010302;
+    aspect-ratio: 1/1; max-width: 280px; margin: 0 auto 18px;
+    box-shadow: var(--glass-shadow);
+  }
+  .preview-frame img{ width:100%; height:100%; object-fit:cover; display:block; }
+
+  .scan-ring{ position:absolute; inset:0; display:none; align-items:center; justify-content:center; }
+  .scan-ring.active{ display:flex; }
+  .scan-ring::before{
+    content:''; position:absolute; inset:8%; border-radius:50%;
+    border: 2.5px solid transparent; border-top-color: var(--accent); border-right-color: var(--secondary);
+    animation: spin 1.1s linear infinite;
+  }
+  .scan-ring::after{
+    content:''; position:absolute; inset:22%; border-radius:50%;
+    border: 1px solid rgba(255,255,255,0.35);
+    box-shadow: 0 0 26px 3px rgba(47,217,194,0.35) inset;
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes spin{ to{ transform: rotate(360deg); } }
+  @keyframes pulse{ 0%,100%{ opacity:.4; } 50%{ opacity:.95; } }
+
+  .file-meta{ font-size:12px; color: var(--ink-faint); text-align:center; margin-bottom: 20px; font-family: var(--font-mono); }
+  .actions-row{ display:flex; gap:10px; justify-content:center; }
+
+  /* ---------- Buttons (glass-styled) ---------- */
+  .btn{
+    appearance:none; border:none; cursor:pointer;
+    font-family: var(--font-body); font-weight:700; font-size:14px;
+    padding: 13px 24px; border-radius: 999px;
+    display:inline-flex; align-items:center; gap:8px;
+    transition: transform .15s ease, filter .15s ease, opacity .15s ease, box-shadow .15s ease;
+  }
+  .btn:active{ transform: translateY(1px) scale(0.99); }
+  .btn:disabled{ opacity:.5; cursor:not-allowed; }
+  .btn-primary{
+    background: linear-gradient(120deg, var(--accent) 0%, var(--accent-deep) 100%);
+    color: var(--accent-ink); box-shadow: 0 10px 30px -8px rgba(47,217,194,0.5);
+  }
+  .btn-primary:not(:disabled):hover{ filter:brightness(1.08); box-shadow: 0 14px 34px -6px rgba(47,217,194,0.6); }
+  .btn-ghost{
+    background: var(--surface); border:1px solid var(--border); color: var(--ink-soft);
+    backdrop-filter: blur(10px);
+  }
+  .btn-ghost:not(:disabled):hover{ border-color: var(--secondary); color: var(--ink); background: var(--surface-strong); }
+  .btn-report{
+    background: linear-gradient(120deg, var(--secondary-wash), rgba(125,211,255,0.04));
+    border:1.5px solid var(--secondary); color: var(--secondary);
+  }
+  .btn-report:not(:disabled):hover{ background: rgba(125,211,255,0.16); }
+  .spinner{
+    width:15px; height:15px; border-radius:50%;
+    border: 2px solid rgba(4,21,18,0.35); border-top-color: var(--accent-ink);
+    animation: spin .7s linear infinite; display:none;
+  }
+  .btn-report .spinner{ border-color: rgba(125,211,255,0.25); border-top-color: var(--secondary); }
+  .btn.loading .spinner{ display:inline-block; }
+  .btn.loading .btn-label{ opacity:.85; }
+
+  /* ---------- Alert ---------- */
+  .alert{
+    display:none; align-items:flex-start; gap:10px;
+    background: rgba(255,107,127,0.08); border:1px solid rgba(255,107,127,0.35);
+    color:#ff9aa8; padding:14px 16px; border-radius: var(--radius-sm);
+    font-size:13.5px; margin-top:18px; line-height:1.5;
+  }
+  .alert.show{ display:flex; }
+  .alert svg{ flex-shrink:0; margin-top:1px; width:17px; height:17px; }
+
+  /* ---------- Results ---------- */
+  .results{ display:none; }
+  .results.show{ display:block; }
+
+  .result-headline{
+    display:flex; align-items:center; gap:20px; flex-wrap:wrap;
+    padding: 20px 22px; border-radius: var(--radius-sm);
+    background: var(--surface); border:1px solid var(--border);
+    margin-bottom: 22px;
+  }
+  .result-badge{
+    width:58px; height:58px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    background: rgba(245,185,92,0.10); border: 1.5px solid rgba(245,185,92,0.4);
+  }
+  .result-badge.is-normal{ background: rgba(53,212,136,0.10); border-color: rgba(53,212,136,0.4); }
+  .result-badge svg{ width:27px; height:27px; color: var(--warn); }
+  .result-badge.is-normal svg{ color: var(--ok); }
+  .result-text{ flex:1; min-width: 180px; }
+  .result-eyebrow{ font-family: var(--font-mono); font-size:11px; color: var(--ink-faint); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:4px; }
+  .result-name{ font-family: var(--font-display); font-size:27px; font-weight:500; font-style: italic; letter-spacing:-0.01em; color: var(--ink); }
+  .result-confidence{ text-align:right; font-family: var(--font-mono); }
+  .result-confidence .val{ font-size:27px; font-weight:700; color: var(--warn); }
+  .result-confidence.is-normal .val{ color: var(--ok); }
+  .result-confidence .lbl{ font-size:10px; color: var(--ink-faint); text-transform:uppercase; letter-spacing:0.07em; }
+
+  .prob-list{ display:flex; flex-direction:column; gap:14px; margin-bottom: 24px; }
+  .prob-row{ display:grid; grid-template-columns: 150px 1fr 58px; align-items:center; gap:12px; }
+  .prob-name{ font-size:13.5px; color: var(--ink-soft); font-weight:500; }
+  .prob-name.top{ color: var(--ink); font-weight:700; }
+  .prob-track{ height:9px; border-radius:6px; background: rgba(255,255,255,0.06); overflow:hidden; }
+  .prob-fill{ height:100%; border-radius:6px; background: linear-gradient(90deg, var(--secondary), var(--accent)); width:0%; transition: width .8s cubic-bezier(.2,.8,.2,1); }
+  .prob-fill.is-normal{ background: linear-gradient(90deg, #7df0c2, var(--ok)); }
+  .prob-pct{ font-family: var(--font-mono); font-size:12.5px; color: var(--ink-soft); text-align:right; }
+
+  .result-actions{ display:flex; gap:10px; flex-wrap:wrap; margin-top: 6px; padding-top: 20px; border-top:1px solid var(--border); }
+
+  .disclaimer{
+    display:flex; gap:9px; font-size:12px; color: var(--ink-faint); line-height:1.6;
+    margin-top: 20px; padding-top:18px; border-top: 1px solid var(--border);
+  }
+  .disclaimer svg{ width:15px; height:15px; flex-shrink:0; margin-top:2px; }
+
+  /* ---------- Conditions strip ---------- */
+  .cond-grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap:16px; margin-bottom:64px; }
+  .cond-card{ padding:20px; transition: transform .2s ease; }
+  .cond-card:hover{ transform: translateY(-3px); }
+  .cond-card h4{ margin:0 0 7px; font-family: var(--font-display); font-size:17px; font-style: italic; font-weight:500; color: var(--ink); }
+  .cond-card p{ margin:0; font-size:12.5px; color: var(--ink-soft); line-height:1.6; }
+  .cond-dot{ width:9px; height:9px; border-radius:50%; display:inline-block; margin-right:8px; }
+
+  footer{
+    padding: 30px 0 44px; margin-top: 20px;
+    color: var(--ink-faint); font-size:12px; font-family: var(--font-mono);
+    display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px;
+  }
+
+  @media (max-width: 560px){
+    .prob-row{ grid-template-columns: 96px 1fr 50px; }
+    .result-confidence{ text-align:left; }
+    .result-headline{ flex-direction:column; align-items:flex-start; }
+    .nav-glass{ border-radius: 24px; }
+  }
+
+</style>
+</head>
+<body>
+
+<div class="blob blob-1"></div>
+<div class="blob blob-2"></div>
+<div class="blob blob-3"></div>
+
+<header class="nav">
+  <div class="shell">
+    <div class="nav-glass glass">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="16" cy="16" r="15" stroke="#2fd9c2" stroke-width="1.2" opacity="0.45"/>
+          <circle cx="16" cy="16" r="9.5" fill="url(#g1)"/>
+          <circle cx="16" cy="16" r="3.4" fill="#050807"/>
+          <path d="M16 8.5c1.2 2 1.6 4 1.4 7.5M9 13c2.4-.8 4.4-.6 7 .4M23 19c-2.4.8-4.4.6-7-.4M16 23.5c-1.2-2-1.6-4-1.4-7.5" stroke="#eafffa" stroke-width="0.9" stroke-linecap="round" opacity="0.85"/>
+          <defs>
+            <radialGradient id="g1" cx="0.35" cy="0.35" r="0.8">
+              <stop offset="0%" stop-color="#7dd3ff"/>
+              <stop offset="100%" stop-color="#12a68f"/>
+            </radialGradient>
+          </defs>
+        </svg>
+        <div class="brand-text">
+          RetinaScan <span style="opacity:.6;font-weight:500;">AI</span>
+          <small>Fundus Screening Tool</small>
+        </div>
+      </div>
+      <div class="status-pill">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">Checking model&hellip;</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="shell">
+
+  <section class="hero">
+    <span class="eyebrow">&#9679; AI-assisted screening &mdash; not a medical diagnosis</span>
+    <h1>Screen retinal images for <span class="accent-word">four common eye conditions</span> in seconds.</h1>
+    <p class="hero-sub">
+      Upload a retinal fundus photograph and this tool will screen it for cataract, diabetic
+      retinopathy, and glaucoma, or confirm a normal result &mdash; then let you download a
+      shareable PDF report of the findings.
+    </p>
+    <div class="trust-row">
+      <div class="trust-item"><b>4</b>conditions screened</div>
+      <div class="trust-item"><b>&lt;2s</b>typical analysis time</div>
+      <div class="trust-item"><b>PDF</b>downloadable report</div>
+    </div>
+  </section>
+
+  <div class="workspace">
+
+    <!-- Upload panel -->
+    <div class="panel glass">
+      <div class="panel-title"><span class="num">1</span> Upload a fundus image</div>
+
+      <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Upload a retinal fundus image">
+        <input type="file" id="fileInput" accept="image/*">
+        <svg class="dz-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 16V4M12 4l-4 4M12 4l4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M4 15v3a2 2 0 002 2h12a2 2 0 002-2v-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div class="dz-title">Drop a retinal image here</div>
+        <div class="dz-sub">or <span class="browse">browse your files</span> &middot; JPG, PNG &middot; up to 16MB</div>
+      </div>
+
+      <div class="preview-wrap" id="previewWrap">
+        <div class="preview-frame">
+          <img id="previewImg" alt="Uploaded retinal image preview">
+          <div class="scan-ring" id="scanRing"></div>
+        </div>
+        <div class="file-meta" id="fileMeta"></div>
+        <div class="actions-row">
+          <button class="btn btn-primary" id="analyzeBtn">
+            <span class="spinner"></span>
+            <span class="btn-label">Analyze image</span>
+          </button>
+          <button class="btn btn-ghost" id="resetBtn">Choose another</button>
+        </div>
+      </div>
+
+      <div class="alert" id="errorAlert">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M12 8v5M12 16h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <span id="errorText"></span>
+      </div>
+    </div>
+
+    <!-- Results panel -->
+    <div class="panel glass results" id="resultsPanel">
+      <div class="panel-title"><span class="num">2</span> Screening result</div>
+
+      <div class="result-headline">
+        <div class="result-badge" id="resultBadge">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 5C6.5 5 2.7 9 1 12c1.7 3 5.5 7 11 7s9.3-4 11-7c-1.7-3-5.5-7-11-7z" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.6"/></svg>
+        </div>
+        <div class="result-text">
+          <div class="result-eyebrow">Predicted condition</div>
+          <div class="result-name" id="resultName">&mdash;</div>
+        </div>
+        <div class="result-confidence" id="resultConfidenceWrap">
+          <div class="val" id="resultConfidence">&mdash;</div>
+          <div class="lbl">Confidence</div>
+        </div>
+      </div>
+
+      <div class="prob-list" id="probList"></div>
+
+      <div class="result-actions">
+        <button class="btn btn-report" id="reportBtn">
+          <span class="spinner"></span>
+          <svg class="btn-label-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 3h7l5 5v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z" stroke="currentColor" stroke-width="1.5"/><path d="M14 3v5h5" stroke="currentColor" stroke-width="1.5"/><path d="M9 13h6M9 16.5h6M9 9.5h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <span class="btn-label">Download PDF report</span>
+        </button>
+        <button class="btn btn-ghost" id="newScanBtn">Screen another image</button>
+      </div>
+
+      <div class="disclaimer">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.4"/><path d="M12 8v5M12 16h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <span>This is an automated screening result, not a medical diagnosis. Please confirm any finding with a qualified ophthalmologist before making health decisions.</span>
+      </div>
+    </div>
+
+  </div>
+
+  <section class="cond-grid" aria-label="Conditions this tool screens for">
+    <div class="cond-card glass">
+      <h4><span class="cond-dot" style="background:#f5b95c"></span>Cataract</h4>
+      <p>Clouding of the eye's natural lens that can blur or dim vision. Often age-related and commonly treatable with surgery.</p>
+    </div>
+    <div class="cond-card glass">
+      <h4><span class="cond-dot" style="background:#ff6b7f"></span>Diabetic Retinopathy</h4>
+      <p>Damage to the retina's blood vessels linked to diabetes. Early detection helps guide treatment and prevent vision loss.</p>
+    </div>
+    <div class="cond-card glass">
+      <h4><span class="cond-dot" style="background:#7dd3ff"></span>Glaucoma</h4>
+      <p>A group of conditions that damage the optic nerve, often tied to elevated eye pressure. Early care can slow progression.</p>
+    </div>
+    <div class="cond-card glass">
+      <h4><span class="cond-dot" style="background:#35d488"></span>Normal</h4>
+      <p>No signs of the three screened conditions were detected in the image.</p>
+    </div>
+  </section>
+
+</main>
+
+<footer class="shell">
+  <span>RetinaScan AI &middot; research &amp; screening tool, not a certified medical device</span>
+  <span id="footerClasses"></span>
+</footer>
+
+<script>
+(function(){
+  "use strict";
+
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+  const previewWrap = document.getElementById('previewWrap');
+  const previewImg = document.getElementById('previewImg');
+  const fileMeta = document.getElementById('fileMeta');
+  const scanRing = document.getElementById('scanRing');
+  const analyzeBtn = document.getElementById('analyzeBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const errorAlert = document.getElementById('errorAlert');
+  const errorText = document.getElementById('errorText');
+  const resultsPanel = document.getElementById('resultsPanel');
+  const resultBadge = document.getElementById('resultBadge');
+  const resultName = document.getElementById('resultName');
+  const resultConfidence = document.getElementById('resultConfidence');
+  const resultConfidenceWrap = document.getElementById('resultConfidenceWrap');
+  const probList = document.getElementById('probList');
+  const reportBtn = document.getElementById('reportBtn');
+  const newScanBtn = document.getElementById('newScanBtn');
+  const statusDot = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+  const footerClasses = document.getElementById('footerClasses');
+
+  let currentFile = null;
+  let lastResult = null; // holds {prediction, confidence, probabilities} from /predict
+
+  // ---------- Model status (uses existing /health endpoint, untouched) ----------
+  fetch('/health')
+    .then(r => r.json())
+    .then(data => {
+      const loaded = data.model_status === 'loaded';
+      statusDot.className = 'status-dot ' + (loaded ? 'online' : 'offline');
+      statusText.textContent = loaded ? 'Model online' : 'Model unavailable';
+      if (Array.isArray(data.classes) && data.classes.length) {
+        footerClasses.textContent = 'Classes: ' + data.classes.map(c => c.replace(/_/g,' ')).join(', ');
+      }
+    })
+    .catch(() => {
+      statusDot.className = 'status-dot offline';
+      statusText.textContent = 'Model unavailable';
+    });
+
+  // ---------- Upload interactions ----------
+  dropzone.addEventListener('click', () => fileInput.click());
+  dropzone.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); }
+  });
+  ['dragenter','dragover'].forEach(evt => dropzone.addEventListener(evt, (e) => {
+    e.preventDefault(); dropzone.classList.add('drag');
+  }));
+  ['dragleave','drop'].forEach(evt => dropzone.addEventListener(evt, (e) => {
+    e.preventDefault(); dropzone.classList.remove('drag');
+  }));
+  dropzone.addEventListener('drop', (e) => {
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) handleFile(f);
+  });
+  fileInput.addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (f) handleFile(f);
+  });
+
+  function handleFile(file){
+    hideError();
+    if (!file.type.startsWith('image/')) {
+      showError('Please choose an image file (JPG, PNG, etc.).');
+      return;
+    }
+    if (file.size > 16 * 1024 * 1024) {
+      showError('File is too large. Maximum size is 16MB.');
+      return;
+    }
+    currentFile = file;
+    const url = URL.createObjectURL(file);
+    previewImg.src = url;
+    fileMeta.textContent = `${file.name}  \u00b7  ${(file.size/1024/1024).toFixed(2)} MB`;
+    previewWrap.classList.add('show');
+    resultsPanel.classList.remove('show');
+    lastResult = null;
+  }
+
+  resetBtn.addEventListener('click', resetUpload);
+  newScanBtn.addEventListener('click', resetUpload);
+
+  function resetUpload(){
+    currentFile = null;
+    lastResult = null;
+    fileInput.value = '';
+    previewWrap.classList.remove('show');
+    resultsPanel.classList.remove('show');
+    hideError();
+  }
+
+  function showError(msg){
+    errorText.textContent = msg;
+    errorAlert.classList.add('show');
+  }
+  function hideError(){ errorAlert.classList.remove('show'); }
+
+  function setBtnLoading(btn, loading){
+    btn.disabled = loading;
+    btn.classList.toggle('loading', loading);
+  }
+
+  // ---------- Analyze (calls existing /predict endpoint, contract unchanged) ----------
+  analyzeBtn.addEventListener('click', async () => {
+    if (!currentFile) return;
+    hideError();
+    setBtnLoading(analyzeBtn, true);
+    scanRing.classList.add('active');
+    resultsPanel.classList.remove('show');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', currentFile);
+
+      const resp = await fetch('/predict', { method: 'POST', body: formData });
+      const data = await resp.json();
+
+      if (!resp.ok || !data.success) {
+        showError(data.error || 'Something went wrong analyzing this image.');
+        return;
+      }
+
+      lastResult = data;
+      renderResults(data);
+      resultsPanel.classList.add('show');
+      resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (err) {
+      showError('Could not reach the server. Please check your connection and try again.');
+    } finally {
+      setBtnLoading(analyzeBtn, false);
+      scanRing.classList.remove('active');
+    }
+  });
+
+  function renderResults(data){
+    const isNormal = String(data.prediction).toLowerCase() === 'normal';
+    const niceName = String(data.prediction).replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase());
+
+    resultName.textContent = niceName;
+    resultConfidence.textContent = (data.confidence * 100).toFixed(1) + '%';
+    resultBadge.classList.toggle('is-normal', isNormal);
+    resultConfidenceWrap.classList.toggle('is-normal', isNormal);
+
+    const entries = Object.entries(data.probabilities || {}).sort((a,b) => b[1]-a[1]);
+    probList.innerHTML = '';
+    entries.forEach(([cls, prob], idx) => {
+      const isTop = idx === 0;
+      const clsIsNormal = cls.toLowerCase() === 'normal';
+      const row = document.createElement('div');
+      row.className = 'prob-row';
+      row.innerHTML = `
+        <div class="prob-name ${isTop ? 'top' : ''}">${cls.replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase())}</div>
+        <div class="prob-track"><div class="prob-fill ${clsIsNormal ? 'is-normal' : ''}" style="width:0%"></div></div>
+        <div class="prob-pct">${(prob*100).toFixed(1)}%</div>
+      `;
+      probList.appendChild(row);
+      requestAnimationFrame(() => {
+        row.querySelector('.prob-fill').style.width = (prob*100).toFixed(1) + '%';
+      });
+    });
+  }
+
+  // ---------- Generate PDF report (new /generate_report endpoint) ----------
+  reportBtn.addEventListener('click', async () => {
+    if (!lastResult || !currentFile) {
+      showError('Analyze an image first, then you can download a report.');
+      return;
+    }
+    hideError();
+    setBtnLoading(reportBtn, true);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', currentFile);
+      formData.append('prediction', lastResult.prediction);
+      formData.append('confidence', lastResult.confidence);
+      formData.append('probabilities', JSON.stringify(lastResult.probabilities));
+
+      const resp = await fetch('/generate_report', { method: 'POST', body: formData });
+
+      if (!resp.ok) {
+        let msg = 'Could not generate the report.';
+        try { const errJson = await resp.json(); msg = errJson.error || msg; } catch(e) {}
+        showError(msg);
+        return;
+      }
+
+      const blob = await resp.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `retinal_screening_report_${Date.now()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      showError('Could not reach the server while generating the report.');
+    } finally {
+      setBtnLoading(reportBtn, false);
+    }
+  });
+
+})();
+</script>
+</body>
+</html>
